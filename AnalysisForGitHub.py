@@ -1,7 +1,7 @@
 import os
 import random
 
-###Program starts on line XXX
+###Program starts on line 588
 
 def PopulateTempArr(TempArr, UpRegFile, DownRegFile, CombinedFile):
 	###When this function is done, Temparr should have five elements
@@ -84,8 +84,8 @@ def PopulateTempArr(TempArr, UpRegFile, DownRegFile, CombinedFile):
 
 	TempArr.append(CombinedDict)
 
-#constructs the Rosetta Stone
 def BuildRosettaStone():
+	#constructs the Rosetta Stone
 	RosettaStone = []
 	RSFile = open("RosettaStone.txt", 'r')
 	for line in RSFile:
@@ -128,7 +128,7 @@ def BuildRosettaStone():
 	return PairwiseSpeciesDicts, SpeciesIndices
 
 def CalcMaximumSharedGenes(PSD):
-	###the purpose of this script is to calculate the maximum number of
+	###the purpose of this function is to calculate the maximum number of
 	###shared genes between datasets for Monte Carlo Analysis
 	###this involves 1) counting the number of Human genes in the Rosetta 
 	###stone that are mapped by the dataset and 2) counting the number of 
@@ -141,7 +141,6 @@ def CalcMaximumSharedGenes(PSD):
 			continue
 		if study == "OLD_SHARMA":
 			continue
-		#print(study)
 		Species = study.split('_')[1]
 
 		###first see how many genes in each "CLEAN_FINAL_EXPRESSION_SET.txt"
@@ -152,6 +151,7 @@ def CalcMaximumSharedGenes(PSD):
 		###read in all genes from the study's expression file 
 		###and try to map them to PSD[Species1PSDIndex]
 		StudyExpressionFile = open("./"+study+"/CLEAN_FINAL_EXPRESSION_SET.txt", 'r')
+		###MissedGenesFile contains all the genes that didn't map using the Rosetta Stone
 		MissedGenesFile = open("./"+study+"/MissedGenes.txt", 'w')
 		MissedGenes = {}
 		###this will go through and find all occurences where
@@ -227,7 +227,6 @@ def FindPSDIndex(species1, species2, PSD):
 			print("UNEXPECTED RESULT IN FindPSDIndex")
 			print(species1, species2)
 			return x
-	#print(species1, species2, " Not found in PSD")
 	return -1
 
 def BuildRobsTable(PMG, StratArr, SpeciesIndices, strat, PSD):
@@ -341,8 +340,12 @@ def BuildRobsTable(PMG, StratArr, SpeciesIndices, strat, PSD):
 	SuccessFile.close()
 
 def SetUpMonteCarlo(ExpressionFile, PMG, strat, genegroup, PSD):
+	###ExpressionFile is the RT file
 	header = ExpressionFile.readline().strip().split('\t')
 	datasets = header[1:-1]
+
+	#identify the directory that contains the expresion data for each dataset
+	#dir ends up being a string that looks like "Study_species"
 	DatasetToRSMaps = []
 	for x in datasets:
 		DatasetRoot = x.split("_")[0]
@@ -350,12 +353,16 @@ def SetUpMonteCarlo(ExpressionFile, PMG, strat, genegroup, PSD):
 			if DatasetRoot in dir:
 				DatasetToRSMaps.append([dir])
 
+	#this section sets up the the ability to randomly sample genes from each dataset 
+	#by mapping genes found in each dataset to DatasetToRSMap via the Rosetta Stone
 	for x in DatasetToRSMaps:
 		DatasetToRSMap = {}
 		DatasetFile = open("./"+x[0]+"/CLEAN_FINAL_EXPRESSION_SET.txt",'r')
 		species = x[0].split("_")[1]
 		PSDIndex = FindPSDIndex("human", species, PSD)
 
+		#for each line in the expression file for the dataset, if the gene maps to the PSD
+		#Add the mapped gene to DatasetToRSMap, 
 		for line in DatasetFile:
 			Gene = line.strip().split('\t')[-1].strip('"')
 			if Gene in PSD[PSDIndex][1]:
@@ -364,14 +371,14 @@ def SetUpMonteCarlo(ExpressionFile, PMG, strat, genegroup, PSD):
 			else:
 				DatasetToRSMap[Gene] = None
 		x.append(DatasetToRSMap)
-	###we can now randomly pick genes from the DatasetToRSMap
+	###we can now randomly pick genes from the DatasetToRSMaps
 
 	###now figure out how many DE genes are in each dataset and how many DE genes are shared between datasets
 	###HumanDEGeneLists will keep track of which RS genes were DE in each dataset
 	HumanDEGeneLists = []
 	###SpeciesDEGeneLists will keep a set of all species genes that were DE in the dataset
-	###the number of unique DE genes mapped to RS will be used as the number of genes to 
-	###pull 
+	###the number of unique DE genes mapped to RS will be used as the number of genes to pull 
+	###randomly from DatasetToRSMaps
 	SpeciesDEGeneLists = []
 	for d in datasets:
 		HumanDEGeneLists.append([d, set()])
@@ -379,6 +386,7 @@ def SetUpMonteCarlo(ExpressionFile, PMG, strat, genegroup, PSD):
 
 	###we need to go to the limmaout files to create SpeciesDEGeneLists
 	###this seems to work
+	###The limmaout file contains all DE genes for a given dataset.  
 	for x in range(len(DatasetToRSMaps)):
 		filenamearr = datasets[x].split('_')[1:]
 		filename = ""
@@ -399,32 +407,38 @@ def SetUpMonteCarlo(ExpressionFile, PMG, strat, genegroup, PSD):
 
 	count = 0
 	for line in ExpressionFile:
+		#Count tracks our progress through the RT file and should add up to the number of Human Genes 
 		count += 1
+		#Split each line of the file into an array
 		arr = line.split('\t')[1:-1]
 		for ind in range(len(arr)):
+			#if an entry != "" then there is a DE gene for that dataset
+			#therefore, add the count index to that datasets list of DE genes
 			if arr[ind] != "":
 				HumanDEGeneLists[ind][1].add(count)
 	ExpressionFile.close()
 
 	#now we can pick len(SpeciesDEGeneLists[ind][1]) genes from DatasetToRSMaps[ind]
 	print("Pairwise")
+	#this will perform pairwise monte carlo simulations to assess if the number of shared DE genes between datasets is significant
 	PairwisePvalDict = PairwiseMonteCarlo(strat, datasets, DatasetToRSMaps, HumanDEGeneLists, SpeciesDEGeneLists, genegroup)
 	print("Distribution")
+	#we run this to test if the distribution of shared DE genes between all datasets is significant.  We didn't include this in the manuscript and it is not guaranteed to work
 	DistributionPValArr, ActualDistribution, AverageRandomDistribution = DistributionMonteCarlo(strat, datasets, DatasetToRSMaps, HumanDEGeneLists, SpeciesDEGeneLists, genegroup)
-
-	#for x in PairwiseMCResults:
-	#   print(x, PairwiseMCResults[x])
-	#print(DistributionPValArr)
 
 	return PairwisePvalDict, DistributionPValArr, ActualDistribution, AverageRandomDistribution, datasets
 
 def PairwiseMonteCarlo(strat, datasets, DatasetToRSMaps, HumanDEGenesLists, SpeciesDEGeneLists, genegroup):
+	#store the results of the simulations in SimulationResultsDict
 	SimulationResultsDict = {}
 
+	#this should track the number of simulations that need to be run
 	compcount = 0
 	for x in range(len(datasets)):
 		compcount += x
 
+	#the PairwiseDistributionFile is a file that tracks the distribution of outcomes from the Monte Carlo simulation
+	#we used this for debugging purposes and to create examples of how the analysis works
 	PairwiseDistributionFile = open("./Stratifications/"+strat+"/"+strat+genegroup+"_PairwiseDistributions.txt", 'w')
 
 	DatasetCompCount = 0
@@ -432,22 +446,25 @@ def PairwiseMonteCarlo(strat, datasets, DatasetToRSMaps, HumanDEGenesLists, Spec
 		for y in range(x+1, len(datasets)):
 			DatasetCompCount += 1
 			comparison = datasets[x] + "_" + datasets[y]
-			#find how many RS genes are shared between the two
+			#find how many RS genes are shared between the two datasets
 			NumberOfOverlappingRSGenes = len(HumanDEGenesLists[x][1].intersection(HumanDEGenesLists[y][1]))
 			if NumberOfOverlappingRSGenes == 0:
 				SimulationResultsDict[datasets[x],datasets[y]] = 1
 				continue
 			#find how many species genes are in each SpeciesDEGeneList
+			#this is the number of genes we will randomly select in the MC simulation.  
 			XSpeciesGenes = len(SpeciesDEGeneLists[x][1])
 			YSpeciesGenes = len(SpeciesDEGeneLists[y][1])
 			
 			###run the MC simulations
+			#GreaterThanCount tracks the number of simulations that produce a number of shared genes than is empirically observed
 			GreaterThanCount = 0
 			IterCount = 10000
 			DistributionTracker = {}
 			for iter in range(IterCount):
+				#this carriage return line seems to work when the script is run on Cygwin but not from the python shell
 				print "Comparison ", DatasetCompCount, " of ", compcount, " MC Iterations Completed ", iter, "                                 \r",
-			#randomly select genes from DatasetToRSMaps
+				#randomly select genes from DatasetToRSMaps
 				XGenes = random.sample(DatasetToRSMaps[x][1],XSpeciesGenes)
 				YGenes = random.sample(DatasetToRSMaps[y][1],YSpeciesGenes)
 				XHumanGenes = set()
@@ -459,21 +476,24 @@ def PairwiseMonteCarlo(strat, datasets, DatasetToRSMaps, HumanDEGenesLists, Spec
 				for gene in YGenes:
 					if DatasetToRSMaps[y][1][gene] != None:
 						YHumanGenes.update(DatasetToRSMaps[y][1][gene])
+				#find the randomly selected genes that overlap
 				SharedGenes = XHumanGenes.intersection(YHumanGenes)
 				NumSharedGenes = len(SharedGenes)
 				
+				#add the number of randomly shared genes to the distribution tracker
 				if NumSharedGenes in DistributionTracker:
 					DistributionTracker[NumSharedGenes] += 1
 				else:
 					DistributionTracker[NumSharedGenes] = 1
 
-				#print "Shared Genes: " + str(len(SharedGenes)) + " Actual Overlapping: " + str(NumberOfOverlappingRSGenes) + "                           \r",
 				if NumSharedGenes >= NumberOfOverlappingRSGenes:
 					GreaterThanCount += 1
 
 			PairwiseDistributionFile.write(datasets[x] + " vs " + datasets[y] +'\n')
 			RandomSharedGenesLine = "Number of Overlapping Genes in MC Simulation:"
 			SimulationsNumLine = "Number of MC Simulations:"
+			#The program is nice enough to access the elements of DistributionTracker in numerical order
+			#I didn't realize that dictionaries worked that way...
 			for z in DistributionTracker:
 				RandomSharedGenesLine += '\t'+ str(z)
 				SimulationsNumLine += '\t' + str(DistributionTracker[z])
@@ -481,6 +501,8 @@ def PairwiseMonteCarlo(strat, datasets, DatasetToRSMaps, HumanDEGenesLists, Spec
 			PairwiseDistributionFile.write(SimulationsNumLine+'\n')
 			PairwiseDistributionFile.write("Actual Number Overlapping Genes:\t"+str(NumberOfOverlappingRSGenes)+'\n')
 
+			#The pval is calculated as the proportion of simulations that give a number of randomly 
+			#shared genes that is greater than or equal to the number of empirically shared genes
 			pval = float(GreaterThanCount)/float(IterCount)
 			SimulationResultsDict[datasets[x],datasets[y]] = pval
 
@@ -559,11 +581,17 @@ found in each.  To compare between species we use a comparison table called the 
 overlapping DE genes between datasets is assessed using monte carlo simulations. For more info, or to express comments/concerns feel free
 to contact me at rjdonahue@wisc.edu"""
 
+###There are multiple lines of code that may seem extraneous and these are generally used for debugging or for tracking the progress of the program
+
 #PSD = Pairwise Species Dicts is a list of dictionaries that link human genes to genes from each species 
 #and genes from each species to their human genes.  
 PSD, SpeciesIndices = BuildRosettaStone()
 
+#Calculate the maximum number of shared genes between each species
+#an return Pairwise Maximum shared Genes (PMG) which is an array 
+#that details the maximum number of genes two datasets may share
 PMG = CalcMaximumSharedGenes(PSD)
+
 ###for each stratification of the data we want to construct a Rob's Table (RT) 
 ###and calculate the number of overlapping genes between datasets
 for strat in os.listdir("./Stratifications/"):
@@ -612,13 +640,10 @@ for strat in os.listdir("./Stratifications/"):
 
 ###now count the # of pairwise shared genes and do MonteCarlo Analysis on those
 ###there are functions to perform PairwiseMonteCarlo and Distribution Monte Carlo
+###note that we never used the Distribution Monte Carlo analysis in our manuscript
 for strat in os.listdir("./Stratifications"):
 	if ".txt" in strat or".xlsx" in strat or ".py" in strat or "OLD" in strat or "pptm" in strat or "docx" in strat or "FIGURES" in strat or "Done" in strat:
 		continue
-
-	#if strat + "_MonteCarloResults.txt" in os.listdir("./Stratifications/" +strat):
-	#   print(strat, " already has MC results")
-	#   continue
 
 	UpRTFile = open("./Stratifications/"+strat+"/"+strat+"_UpGenes.txt", 'r')
 	DownRTFile = open("./Stratifications/"+strat+"/"+strat+"_DownGenes.txt", 'r')
@@ -627,11 +652,9 @@ for strat in os.listdir("./Stratifications"):
 	print(strat)
 	print("UpReg")
 	UpPairwisePValDict, UpDistributionPValArr, UpDistribution, UpARD, UpDatasets = SetUpMonteCarlo(UpRTFile, PMG, strat, "Up", PSD)
-	#print(UpPairwisePValDict)
 	###downregulated stuff
 	print("DownReg")
 	DownPairwisePValDict, DownDistributionPValArr, DownDistribution, DownARD, DownDatasets = SetUpMonteCarlo(DownRTFile, PMG, strat, "Down", PSD)
-	
 
 	UpRTFile.close()
 	DownRTFile.close()
